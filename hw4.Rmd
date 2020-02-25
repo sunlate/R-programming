@@ -1,0 +1,114 @@
+---
+title: "HW4 Interactive visualization \n Lei Sun"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggrepel)
+library(treemap)
+library(tidyquant)
+library(httr)
+library(tidyr)
+library(lubridate)
+library(maps)
+library(mapproj)
+library(RColorBrewer)
+library(d3heatmap)
+library(highcharter)
+library(viridisLite)
+library(chorddiag)
+
+```
+
+Column {data-height=500}
+-----------------------------------------------------------------------
+
+### President's budget
+
+```{r}
+outlays2019 <- read_csv("outlays-fy2019.csv")
+names(outlays2019) <- gsub(" ",".",names(outlays2019))
+outlays2019_treemap= outlays2019 %>% filter(`2019`>10000000) %>% select("Agency.Name", "Bureau.Name","BEA.Category", "2019") %>%
+  group_by(Agency.Name,Bureau.Name) %>% summarise(Outlay=sum(`2019`))
+#change index names
+outlays2019_treemap$Agency.Name[outlays2019_treemap$Agency.Name == "Infrastructure Initiative"] <- "The Infrastructure Initiative"
+outlays2019_treemap$Agency.Name[outlays2019_treemap$Agency.Name == "Office of Personnel Management"] <- "The Office of Personnel Management"
+outlays2019_treemap$Agency.Name[outlays2019_treemap$Agency.Name == "Social Security Administration"] <- "The Social Security Administration"
+
+mytree_2019 <- treemap(outlays2019_treemap,index=c("Bureau.Name","Agency.Name"),
+                vSize="Outlay",palette = "Set2",
+                draw = FALSE)
+mytree_2019 %>% hctreemap(allowDrillToNode = TRUE, layoutAlgorithm = "squarified") %>%
+            hc_tooltip(pointFormat = "<b>{point.name}</b>:<br> $ {point.value} ")
+
+```
+
+### Energy Geographic Map
+
+```{r}
+energy_map <- read_csv("map_df.csv")
+energy_map[is.na(energy_map)] <- 0
+energy_map$Country_Area[energy_map$Country_Area=="Russian Federation"] <-"Russia"
+energy_map$Country_Area[energy_map$Country_Area=="United States"] <-"United States of America"
+
+hc <-hcmap("custom/world",
+           download_map_data = getOption("highcharter.download_map_data"),
+           data = energy_map, value = "Energy_Supply",
+      joinBy = c("name","Country_Area"), name ="Energy Supply",
+      dataLabels = list(enabled = TRUE, format = '{point.name}'),
+      borderColor = "#FAFAFA", borderWidth = 0.1)
+
+pal <- brewer.pal(name = "RdYlGn", n = 6)
+stops <- data.frame(q = c(0,0.05,0.1,0.2,0.5,1),
+                    c =  pal,
+                    stringsAsFactors = FALSE)
+stops <- list_parse2(stops)
+hc_colorAxis(hc, stops = stops)
+
+```
+
+
+Row {.tabset .tabset-fade}
+-----------------------------------------------------------------------
+### Heatmap
+
+```{r}
+energy <- read_csv("energy_data.csv")
+energy[is.na(energy)] <- 0
+energy_update <- data.matrix(energy[,-1])
+rownames(energy_update) <-energy$Country
+energy_update_subset = subset(energy_update, select = -Total)
+# Visualize with column-wise Z-scores
+
+pal <- brewer.pal(name = "RdBu", n = 11) %>% rev()
+pal2 <- colorRampPalette(pal)(50)
+d3heatmap(energy_update_subset, scale = "column",colors = scales::col_quantile("RdBu",NULL,30), cexCol=0.8, cexRow=1.0)
+
+```
+
+### Chord Diagram
+
+```{r}
+energy_chord <- read_csv("energy_data.csv")
+energy_chord <- as.data.frame(energy_chord)
+energy_chord[is.na(energy_chord)] <- 0
+rownames(energy_chord) <-energy_chord$Country
+energy_chord_update <- as.matrix(energy_chord[,-c(1:2)])
+dimnames(energy_chord_update) <- list(Country = as.factor(energy_chord$Country),
+                                      Energy =  as.factor(colnames(energy_chord)[3:7] ))
+
+# customer color
+mypalette <- brewer.pal(name = "Spectral", n =11)
+pal1 <- colorRampPalette(mypalette)(29)
+pal2 <- brewer.pal(name = "RdBu",n = 5)
+groupColors <- c(pal1,pal2)
+
+chorddiag(energy_chord_update, type = "bipartite",
+          groupColors = groupColors,
+          tickInterval = 4000 ,groupnamePadding = 35, groupnameFontsize = 13,
+          categorynamePadding = 85, categorynameFontsize = 20)
+```
